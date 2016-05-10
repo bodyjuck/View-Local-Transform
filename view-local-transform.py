@@ -5,7 +5,7 @@ import copy
 bl_info = {
     "name" : "View Local Transform",             
     "author" : "dskjal",                  
-    "version" : (0,1),                  
+    "version" : (0,2),                  
     "blender" : (2, 77, 0),              
     "location" : "View3D > PropertiesShelf > Local Transform",   
     "description" : "View Local Transform",   
@@ -35,17 +35,16 @@ def create_scale_matrix_4x4(v):
 
 def get_updated_world_from_local():
     ob = bpy.context.active_object
-    scn = bpy.context.scene
-    loc = scn.lt_location
-    scale = scn.lt_scale
+    loc = ob.lt_location
+    scale = ob.lt_scale
 
     mRot = None
     if ob.rotation_mode=='QUATERNION':
-        mRot = scn.lt_quaternion.to_matrix().to_4x4()
+        mRot = ob.lt_quaternion.to_matrix().to_4x4()
     elif ob.rotation_mode=='AXIS_ANGLE':
-        mRot = mathutils.Quaternion(scn.lt_quaternion[1:3], scn.lt_quaternion[0]).to_matrix().to_4x4()
+        mRot = mathutils.Quaternion(ob.lt_quaternion[1:3], ob.lt_quaternion[0]).to_matrix().to_4x4()
     else:
-        mRot = mathutils.Euler(scn.lt_euler,ob.rotation_mode).to_matrix().to_4x4()
+        mRot = mathutils.Euler(ob.lt_euler,ob.rotation_mode).to_matrix().to_4x4()
 
     component = ob.matrix_local.decompose()
     mLoc = mathutils.Matrix.Translation(loc)
@@ -55,38 +54,8 @@ def get_updated_world_from_local():
     parent_world = get_parent_world_matrix(ob)
     return parent_world * updated_local
 
-def local_loc_update(self, value):
-    ob = bpy.context.active_object
-    scn = bpy.context.scene
-
-    if not scn.disable_recursion:
-        scn.disable_recursion = True
-
-        #ob.matrix_world = get_updated_world_from_local()
-
-        bpy.context.scene.update()
-
-def local_rot_update(self, value):
-    ob = bpy.context.active_object
-    scn = bpy.context.scene
-
-    if not scn.disable_recursion:
-        scn.disable_recursion = True
-
-        #ob.matrix_world = get_updated_world_from_local()
-
-        bpy.context.scene.update()
-
-def local_scale_update(self, value):
-    ob = bpy.context.active_object
-    scn = bpy.context.scene
-
-    if not scn.disable_recursion:
-        scn.disable_recursion = True
-
-        #ob.matrix_world = get_updated_world_from_local()
-
-        bpy.context.scene.update()
+def value_changed_callback(self, context):
+    bpy.context.scene.lt_value_updated = True
 
 #------------------------------------------UI------------------------
 class UI(bpy.types.Panel):
@@ -94,13 +63,13 @@ class UI(bpy.types.Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
 
-    bpy.types.Scene.lt_location = bpy.props.FloatVectorProperty(name="",subtype='XYZ',set=local_loc_update)
-    bpy.types.Scene.lt_scale = bpy.props.FloatVectorProperty(name="",subtype='XYZ',default=(1,1,1),set=local_scale_update)
-    bpy.types.Scene.lt_euler = bpy.props.FloatVectorProperty(name="",subtype='EULER',set=local_rot_update)
-    bpy.types.Scene.lt_quaternion = bpy.props.FloatVectorProperty(name="",subtype='QUATERNION',size=4,set=local_rot_update)
+    bpy.types.Object.lt_location = bpy.props.FloatVectorProperty(name="",subtype='XYZ', update = value_changed_callback)
+    bpy.types.Object.lt_scale = bpy.props.FloatVectorProperty(name="",subtype='XYZ',update = value_changed_callback)
+    bpy.types.Object.lt_euler = bpy.props.FloatVectorProperty(name="",subtype='EULER',update = value_changed_callback)
+    bpy.types.Object.lt_quaternion = bpy.props.FloatVectorProperty(name="",subtype='QUATERNION',size=4,update = value_changed_callback)
 
-    bpy.types.Scene.disable_recursion = bpy.props.BoolProperty(name="")
-
+    bpy.types.Scene.lt_value_updated = bpy.props.BoolProperty(name="",default=False)
+    bpy.types.Scene.lt_last_selected_object = bpy.props.StringProperty(name="")
     @classmethod
     def poll(self, context):
         return context.active_object.mode == 'OBJECT'
@@ -112,18 +81,43 @@ class UI(bpy.types.Panel):
 
         layout.label(text="Local Location:")
         col = layout.column(align=True)
-        col.prop(scn, "lt_location")
+        col.prop(ob, "lt_location")
 
         layout.label(text="Local Rotation:")
         col = layout.column(align=True)
         if ob.rotation_mode=='QUATERNION' or ob.rotation_mode=='AXIS_ANGLE':
-            col.prop(scn, "lt_quaternion")
+            col.prop(ob, "lt_quaternion")
         else:
-            col.prop(scn, "lt_euler")
+            col.prop(ob, "lt_euler")
 
         layout.label(text="Local Scale:")
         col = layout.column(align=True)
-        col.prop(scn, "lt_scale")
+        col.prop(ob, "lt_scale")
+
+# update value with local matrix
+def update_property():
+    ob = bpy.context.active_object
+
+    component = ob.matrix_local.decompose()
+    loc = component[0]
+    qt = component[1]
+    scale = component[2]
+
+    ob.lt_location = loc
+    ob.lt_scale = scale
+    
+    if ob.rotation_mode=='QUATERNION':
+        if ob.lt_quaternion != qt:
+            ob.lt_quaternion = qt
+    elif ob.rotation_mode=='AXIS_ANGLE':
+        aa = qt.to_axis_angle()
+        aa_out = (aa[1],aa[0][0], aa[0][1], aa[0][2])
+        if ob.lt_quaternion != aa_out:
+            ob.lt_quaternion = aa_out
+    else:
+        euler = qt.to_euler(ob.rotation_mode)
+        if ob.lt_euler != euler:
+            ob.lt_euler = euler
 
 def global_callback_handler(context):
     ob = bpy.context.active_object
@@ -131,30 +125,15 @@ def global_callback_handler(context):
     if ob.mode != 'OBJECT':
         return
 
-    component = ob.matrix_local.decompose()
-    loc = component[0]
-    qt = component[1]
-    scale = component[2]
+    if scn.lt_last_selected_object != ob.name:
+        scn.lt_last_selected_object = ob.name
+        scn.lt_value_updated = False
 
-    scn.disable_recursion = False
+    if scn.lt_value_updated:
+        ob.matrix_world = get_updated_world_from_local()
 
-    if scn.lt_location != loc:
-        scn.lt_location = loc
-    if scn.lt_scale != scale:
-        scn.lt_scale = scale
-    
-    if ob.rotation_mode=='QUATERNION':
-        if scn.lt_quaternion != qt:
-            scn.lt_quaternion = qt
-    elif ob.rotation_mode=='AXIS_ANGLE':
-        aa = qt.to_axis_angle()
-        aa_out = (aa[1],aa[0][0], aa[0][1], aa[0][2])
-        if scn.lt_quaternion != aa_out:
-            scn.lt_quaternion = aa_out
-    else:
-        euler = qt.to_euler(ob.rotation_mode)
-        if scn.lt_euler != euler:
-            scn.lt_euler = euler
+    update_property()
+
 
 def register():
     bpy.utils.register_module(__name__)
