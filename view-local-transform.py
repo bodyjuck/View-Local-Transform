@@ -24,50 +24,6 @@ def get_parent_world_matrix(ob):
 
     return ob.parent.matrix_world
     
-
-def local_loc_update(self, context):
-    ob = bpy.context.active_object
-    scn = bpy.context.scene
-    loc = scn.lt_location
-
-    if not scn.disable_recursion:
-        scn.disable_recursion = True
-
-        updated_local = copy.deepcopy(ob.matrix_local)
-        updated_local[0][3] = loc[0]
-        updated_local[1][3] = loc[1]
-        updated_local[2][3] = loc[2]
-
-        parent_world = get_parent_world_matrix(ob)
-        ob.matrix_world = parent_world * updated_local
-
-        bpy.context.scene.update()
-
-def local_rot_update(self, context):
-    ob = bpy.context.active_object
-    scn = bpy.context.scene
-
-    if not scn.disable_recursion:
-        scn.disable_recursion = True
-
-        mRot = None
-        if ob.rotation_mode=='QUATERNION':
-            mRot = scn.lt_quaternion.to_matrix().to_4x4()
-        elif ob.rotation_mode=='AXIS_ANGLE':
-            mRot = mathutils.Quaternion(scn.lt_quaternion[1:3], scn.lt_quaternion[0]).to_matrix().to_4x4()
-        else:
-            mRot = mathutils.Euler(scn.lt_euler,ob.rotation_mode).to_matrix().to_4x4()
-
-        component = ob.matrix_local.decompose()
-        mLoc = mathutils.Matrix.Translation(component[0])
-        mScale = create_scale_matrix_4x4(component[2])
-        updated_local = mLoc * mRot * mScale
-
-        parent_world = get_parent_world_matrix(ob)
-        ob.matrix_world = parent_world * updated_local
-
-        bpy.context.scene.update()
-
 def create_scale_matrix_4x4(v):
     m = mathutils.Matrix()
     m.identity()
@@ -77,21 +33,58 @@ def create_scale_matrix_4x4(v):
 
     return m
 
-def local_scale_update(self, context):
+def get_updated_world_from_local():
     ob = bpy.context.active_object
     scn = bpy.context.scene
+    loc = scn.lt_location
     scale = scn.lt_scale
+
+    mRot = None
+    if ob.rotation_mode=='QUATERNION':
+        mRot = scn.lt_quaternion.to_matrix().to_4x4()
+    elif ob.rotation_mode=='AXIS_ANGLE':
+        mRot = mathutils.Quaternion(scn.lt_quaternion[1:3], scn.lt_quaternion[0]).to_matrix().to_4x4()
+    else:
+        mRot = mathutils.Euler(scn.lt_euler,ob.rotation_mode).to_matrix().to_4x4()
+
+    component = ob.matrix_local.decompose()
+    mLoc = mathutils.Matrix.Translation(loc)
+    mScale = create_scale_matrix_4x4(scale)
+    updated_local = mLoc * mRot * mScale
+
+    parent_world = get_parent_world_matrix(ob)
+    return parent_world * updated_local
+
+def local_loc_update(self, value):
+    ob = bpy.context.active_object
+    scn = bpy.context.scene
 
     if not scn.disable_recursion:
         scn.disable_recursion = True
-        component = ob.matrix_local.decompose()
-        mLoc = mathutils.Matrix.Translation(component[0])
-        mRot = component[1].to_matrix().to_4x4()
-        mScale = create_scale_matrix_4x4(scale)
-        updated_local = mLoc * mRot * mScale
 
-        parent_world = get_parent_world_matrix(ob)
-        ob.matrix_world = parent_world * updated_local
+        #ob.matrix_world = get_updated_world_from_local()
+
+        bpy.context.scene.update()
+
+def local_rot_update(self, value):
+    ob = bpy.context.active_object
+    scn = bpy.context.scene
+
+    if not scn.disable_recursion:
+        scn.disable_recursion = True
+
+        #ob.matrix_world = get_updated_world_from_local()
+
+        bpy.context.scene.update()
+
+def local_scale_update(self, value):
+    ob = bpy.context.active_object
+    scn = bpy.context.scene
+
+    if not scn.disable_recursion:
+        scn.disable_recursion = True
+
+        #ob.matrix_world = get_updated_world_from_local()
 
         bpy.context.scene.update()
 
@@ -101,10 +94,10 @@ class UI(bpy.types.Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
 
-    bpy.types.Scene.lt_location = bpy.props.FloatVectorProperty(name="",subtype='XYZ',update=local_loc_update)
-    bpy.types.Scene.lt_scale = bpy.props.FloatVectorProperty(name="",subtype='XYZ',update=local_scale_update)
-    bpy.types.Scene.lt_euler = bpy.props.FloatVectorProperty(name="",subtype='EULER',update=local_rot_update)
-    bpy.types.Scene.lt_quaternion = bpy.props.FloatVectorProperty(name="",subtype='QUATERNION',size=4,update=local_rot_update)
+    bpy.types.Scene.lt_location = bpy.props.FloatVectorProperty(name="",subtype='XYZ',set=local_loc_update)
+    bpy.types.Scene.lt_scale = bpy.props.FloatVectorProperty(name="",subtype='XYZ',default=(1,1,1),set=local_scale_update)
+    bpy.types.Scene.lt_euler = bpy.props.FloatVectorProperty(name="",subtype='EULER',set=local_rot_update)
+    bpy.types.Scene.lt_quaternion = bpy.props.FloatVectorProperty(name="",subtype='QUATERNION',size=4,set=local_rot_update)
 
     bpy.types.Scene.disable_recursion = bpy.props.BoolProperty(name="")
 
