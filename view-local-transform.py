@@ -5,7 +5,7 @@ import copy
 bl_info = {
     "name" : "View Local Transform",             
     "author" : "dskjal",                  
-    "version" : (0,2),                  
+    "version" : (0,3),                  
     "blender" : (2, 77, 0),              
     "location" : "View3D > PropertiesShelf > Local Transform",   
     "description" : "View Local Transform",   
@@ -68,8 +68,14 @@ class UI(bpy.types.Panel):
     bpy.types.Object.lt_euler = bpy.props.FloatVectorProperty(name="",subtype='EULER',update = value_changed_callback)
     bpy.types.Object.lt_quaternion = bpy.props.FloatVectorProperty(name="",subtype='QUATERNION',size=4,update = value_changed_callback)
 
+    bpy.types.Object.lt_old_location = bpy.props.FloatVectorProperty(name="",subtype='XYZ')
+    bpy.types.Object.lt_old_scale = bpy.props.FloatVectorProperty(name="",subtype='XYZ')
+    bpy.types.Object.lt_old_euler = bpy.props.FloatVectorProperty(name="",subtype='EULER')
+    bpy.types.Object.lt_old_quaternion = bpy.props.FloatVectorProperty(name="",subtype='QUATERNION',size=4)
+
     bpy.types.Scene.lt_value_updated = bpy.props.BoolProperty(name="",default=False)
     bpy.types.Scene.lt_last_selected_object = bpy.props.StringProperty(name="")
+
     @classmethod
     def poll(self, context):
         return context.active_object.mode == 'OBJECT'
@@ -119,6 +125,17 @@ def update_property():
         if ob.lt_euler != euler:
             ob.lt_euler = euler
 
+def matrix_to_linear(m):
+    out = []
+    for r in m:
+        for e in r:
+            out.append(e)
+    return out
+
+def is_same_matrix(ml, m):
+    l = matrix_to_linear(m)
+    return ml==m
+
 def global_callback_handler(context):
     ob = bpy.context.active_object
     scn = bpy.context.scene
@@ -128,6 +145,33 @@ def global_callback_handler(context):
     if scn.lt_last_selected_object != ob.name:
         scn.lt_last_selected_object = ob.name
         scn.lt_value_updated = False
+
+    if is_same_matrix(ob.lt_old_world, ob.matrix_basis):
+        ob.lt_old_world = matrix_to_linear(ob.matrix_basis)
+        update_property()
+
+    #for default manipulation
+    if ob.lt_old_location != ob.location:
+        ob.lt_old_location = ob.location
+        update_property()
+
+    if ob.lt_old_scale != ob.scale:
+        ob.lt_old_scale = ob.scale
+        update_property()
+
+    if ob.rotation_mode=='QUATERNION':
+        if ob.lt_old_quaternion != ob.rotation_quaternion:
+            ob.lt_old_quaternion = ob.rotation_quaternion
+            update_property()
+    elif ob.rotation_mode=='AXIS_ANGLE':
+        if ob.lt_old_quaternion != ob.rotation_axis_angle:
+            ob.lt_old_quaternion = ob.rotation_axis_angle
+            update_property()
+    else:
+        if ob.lt_old_euler != ob.rotation_euler:
+            ob.lt_old_euler = ob.rotation_euler
+            update_property()
+
 
     if scn.lt_value_updated:
         ob.matrix_world = get_updated_world_from_local()
