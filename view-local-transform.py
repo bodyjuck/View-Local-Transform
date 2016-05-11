@@ -5,7 +5,7 @@ import copy
 bl_info = {
     "name" : "View Local Transform",             
     "author" : "dskjal",                  
-    "version" : (0,4),                  
+    "version" : (0,5),                  
     "blender" : (2, 77, 0),              
     "location" : "View3D > PropertiesShelf > Local Transform",   
     "description" : "View Local Transform",   
@@ -33,7 +33,7 @@ def create_scale_matrix_4x4(v):
 
     return m
 
-def get_updated_world_from_local():
+def get_updated_world():
     ob = bpy.context.active_object
     loc = ob.lt_location
     scale = ob.lt_scale
@@ -42,11 +42,10 @@ def get_updated_world_from_local():
     if ob.rotation_mode=='QUATERNION':
         mRot = ob.lt_quaternion.to_matrix().to_4x4()
     elif ob.rotation_mode=='AXIS_ANGLE':
-        mRot = mathutils.Quaternion(ob.lt_quaternion[1:3], ob.lt_quaternion[0]).to_matrix().to_4x4()
+        mRot = mathutils.Matrix.Rotation(ob.lt_axisangle[0], 4, ob.lt_axisangle[1:4])
     else:
         mRot = mathutils.Euler(ob.lt_euler,ob.rotation_mode).to_matrix().to_4x4()
 
-    component = ob.matrix_local.decompose()
     mLoc = mathutils.Matrix.Translation(loc)
     mScale = create_scale_matrix_4x4(scale)
     updated_local = mLoc * mRot * mScale
@@ -67,11 +66,13 @@ class UI(bpy.types.Panel):
     bpy.types.Object.lt_scale = bpy.props.FloatVectorProperty(name="",subtype='XYZ',update = value_changed_callback)
     bpy.types.Object.lt_euler = bpy.props.FloatVectorProperty(name="",subtype='EULER',update = value_changed_callback)
     bpy.types.Object.lt_quaternion = bpy.props.FloatVectorProperty(name="",subtype='QUATERNION',size=4,update = value_changed_callback)
+    bpy.types.Object.lt_axisangle = bpy.props.FloatVectorProperty(name="",subtype='AXISANGLE',size=4,update=value_changed_callback)
 
     bpy.types.Object.lt_old_location = bpy.props.FloatVectorProperty(name="",subtype='XYZ')
     bpy.types.Object.lt_old_scale = bpy.props.FloatVectorProperty(name="",subtype='XYZ')
     bpy.types.Object.lt_old_euler = bpy.props.FloatVectorProperty(name="",subtype='EULER')
     bpy.types.Object.lt_old_quaternion = bpy.props.FloatVectorProperty(name="",subtype='QUATERNION',size=4)
+    bpy.types.Object.lt_old_axisangle = bpy.props.FloatVectorProperty(name="",subtype='AXISANGLE',size=4)
 
     bpy.types.Scene.lt_value_updated_by_user = bpy.props.BoolProperty(name="",default=False)
     bpy.types.Scene.lt_last_selected_object = bpy.props.StringProperty(name="")
@@ -91,8 +92,10 @@ class UI(bpy.types.Panel):
 
         layout.label(text="Local Rotation:")
         col = layout.column(align=True)
-        if ob.rotation_mode=='QUATERNION' or ob.rotation_mode=='AXIS_ANGLE':
+        if ob.rotation_mode=='QUATERNION':
             col.prop(ob, "lt_quaternion")
+        elif ob.rotation_mode=='AXIS_ANGLE':
+            col.prop(ob, "lt_axisangle")
         else:
             col.prop(ob, "lt_euler")
 
@@ -118,23 +121,12 @@ def update_property():
     elif ob.rotation_mode=='AXIS_ANGLE':
         aa = qt.to_axis_angle()
         aa_out = (aa[1],aa[0][0], aa[0][1], aa[0][2])
-        if ob.lt_quaternion != aa_out:
-            ob.lt_quaternion = aa_out
+        if ob.lt_axisangle != aa_out:
+            ob.lt_axisangle = aa_out
     else:
         euler = qt.to_euler(ob.rotation_mode)
         if ob.lt_euler != euler:
             ob.lt_euler = euler
-
-def matrix_to_linear(m):
-    out = []
-    for r in m:
-        for e in r:
-            out.append(e)
-    return out
-
-def is_same_matrix(ml, m):
-    l = matrix_to_linear(m)
-    return ml==m
 
 def global_callback_handler(context):
     ob = bpy.context.active_object
@@ -146,12 +138,11 @@ def global_callback_handler(context):
         scn.lt_last_selected_object = ob.name
         scn.lt_value_updated_by_user = False
 
-    if is_same_matrix(ob.lt_old_world, ob.matrix_basis):
-        ob.lt_old_world = matrix_to_linear(ob.matrix_basis)
+    if scn.lt_value_updated_by_user:
+        ob.matrix_world = get_updated_world()
         update_property()
-
-    #for default manipulation
-    if not scn.lt_value_updated_by_user:
+    else:
+        #for default manipulation
         if ob.lt_old_location != ob.location:
             ob.lt_old_location = ob.location
             update_property()
@@ -165,19 +156,14 @@ def global_callback_handler(context):
                 ob.lt_old_quaternion = ob.rotation_quaternion
                 update_property()
         elif ob.rotation_mode=='AXIS_ANGLE':
-            if ob.lt_old_quaternion != ob.rotation_axis_angle:
-                ob.lt_old_quaternion = ob.rotation_axis_angle
+            if ob.lt_old_axisangle != ob.rotation_axis_angle:
+                ob.lt_old_axisangle = ob.rotation_axis_angle
                 update_property()
         else:
             if ob.lt_old_euler != ob.rotation_euler:
                 ob.lt_old_euler = ob.rotation_euler
                 update_property()
 
-
-    if scn.lt_value_updated_by_user:
-        ob.matrix_world = get_updated_world_from_local()
-
-    update_property()
     scn.lt_value_updated_by_user = False
 
 
