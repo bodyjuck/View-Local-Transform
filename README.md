@@ -1,2 +1,6 @@
 # View-Local-Transform
-Display a object's local transform.
+This is a Blender addon that display a object's local transform.  
+これはオブジェクトのローカル座標を表示するアドオンです．
+
+The value can change in properties panel.  
+プロパティパネルで値を更新できます．
