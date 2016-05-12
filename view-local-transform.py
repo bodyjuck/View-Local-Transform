@@ -6,7 +6,7 @@ import copy
 bl_info = {
     "name" : "View Local Transform",             
     "author" : "dskjal",                  
-    "version" : (0,6),                  
+    "version" : (1,0),                  
     "blender" : (2, 77, 0),              
     "location" : "View3D > PropertiesShelf > Local Transform",   
     "description" : "View Local Transform",   
@@ -38,11 +38,9 @@ def get_updated_world():
 
     mRot = None
     if ob.rotation_mode=='QUATERNION':
-        #mRot = ob.lt_quaternion.to_matrix().to_4x4()
         mRot = ob.lt_quaternion.to_euler('XYZ').to_matrix().to_4x4()
     elif ob.rotation_mode=='AXIS_ANGLE':
         mRot = mathutils.Matrix.Rotation(ob.lt_axisangle[0], 4, ob.lt_axisangle[1:4])
-        #mRot = mathutils.Quaternion(ob.lt_axisangle[1:4], ob.lt_axisangle[0]).to_euler('XYZ').to_matrix().to_4x4()
     else:
         mRot = mathutils.Euler(ob.lt_euler,ob.rotation_mode).to_matrix().to_4x4()
 
@@ -145,6 +143,7 @@ def global_callback_handler(context):
     if ob.mode != 'OBJECT':
         return
 
+    # Selected object changed
     if scn.lt_last_selected_object != ob.name:
         scn.lt_last_selected_object = ob.name
         scn.lt_value_updated_from_Panel = False
@@ -156,10 +155,17 @@ def global_callback_handler(context):
         update_property(force_update=True)
 
     if scn.lt_value_updated_from_Panel:
-        ob.matrix_world = get_updated_world()
+        # Updated by Local Transform Panel
+        mWorld = get_updated_world()
+        if ob.rotation_mode=='AXIS_ANGLE':
+            ob.rotation_mode = 'XYZ'
+            ob.matrix_world = mWorld
+            ob.rotation_mode = 'AXIS_ANGLE'
+        else:
+            ob.matrix_world = mWorld
         update_property()
     else:
-        #for default manipulation
+        # Updated by manipulation
         if ob.lt_old_location != ob.location:
             ob.lt_old_location = ob.location
             update_property()
